@@ -196,6 +196,12 @@ h2{font-size:1rem}
 .kitem .yen{font-family:var(--font-display);font-weight:600;font-size:1.1rem;font-variant-numeric:tabular-nums}
 .kdel{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:.74rem;padding:4px 6px;border-radius:8px}
 .kdel.confirm{background:var(--sun);color:#fff}
+.kacts{display:flex;flex-direction:column;gap:2px;align-items:stretch}
+.kedit{border:1px solid var(--hair);background:var(--card);color:var(--ink);cursor:pointer;font-size:.74rem;padding:3px 8px;border-radius:999px}
+.kitem.editing{background:var(--p2s);border-radius:14px;padding-inline:8px}
+.formcard.editing{box-shadow:0 0 0 2px var(--rose),var(--shadow)}
+.formhead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.cancel{border:1px solid var(--hair);background:var(--card);color:var(--muted);border-radius:999px;padding:5px 14px;font-size:.8rem;cursor:pointer}
 .list{gap:0}
 </style>
 </head>
@@ -221,8 +227,11 @@ h2{font-size:1rem}
 
   <p class="demo" id="demoNote" hidden>おためしモード：いまはこの端末だけに保存しています。「（例）」の記録は自由に消してください。</p>
 
-  <section class="card" aria-labelledby="addTitle">
-    <h2 id="addTitle">お買いものを記録</h2>
+  <section class="card formcard" id="formCard" aria-labelledby="addTitle">
+    <div class="formhead">
+      <h2 id="addTitle">お買いものを記録</h2>
+      <button type="button" class="cancel" id="cancelEdit" hidden>やめる</button>
+    </div>
     <form id="form" class="kform" novalidate>
       <div class="amount"><span>¥</span><input id="amount" inputmode="numeric" placeholder="0" autocomplete="off" aria-label="金額（円）"></div>
       <div class="field"><span class="label">項目</span><div class="cats" id="catChips"></div></div>
@@ -382,16 +391,18 @@ function render(){
     const p=PAYERS.find(x=>x.id===i.payer)||PAYERS[0];
     const m=METHODS.find(x=>x.id===i.method)?.name||"";
     const li=document.createElement("li");li.className="kitem";
-    li.innerHTML=`<span class="badge"></span><span class="info"><span class="t"></span><span class="s"></span></span><span class="yen"></span><button class="kdel" type="button">削除</button>`;
+    li.innerHTML=`<span class="badge"></span><span class="info"><span class="t"></span><span class="s"></span></span><span class="yen"></span><span class="kacts"><button class="kedit" type="button">編集</button><button class="kdel" type="button">削除</button></span>`;
     li.querySelector(".badge").style.background=c.c;li.querySelector(".badge").textContent=c.name.slice(0,1);
     li.querySelector(".t").textContent=i.memo||c.name;
     li.querySelector(".s").textContent=`${Number(i.date.slice(5,7))}/${Number(i.date.slice(8,10))}・${c.name}・${p.name}（${m}）`;
     li.querySelector(".yen").textContent=yen(i.amount);
+    if(editing&&editing.id===i.id)li.classList.add("editing");
+    li.querySelector(".kedit").addEventListener("click",()=>startEdit(i));
     const del=li.querySelector(".kdel");
     del.addEventListener("click",async()=>{
       if(!del.classList.contains("confirm")){del.classList.add("confirm");del.textContent="本当に削除";setTimeout(()=>{del.classList.remove("confirm");del.textContent="削除"},3000);return}
       del.disabled=true;
-      try{await store.remove(i.id);toast("削除しました");await reload()}catch(e){toast("削除できませんでした");del.disabled=false}
+      try{await store.remove(i.id);if(editing&&editing.id===i.id)endEdit();toast("削除しました");await reload()}catch(e){toast("削除できませんでした");del.disabled=false}
     });
     ul.appendChild(li);
   });
@@ -402,6 +413,32 @@ $("next").onclick=()=>{month=shiftMonth(month,1);reload()};
 let toastT=null;
 function toast(t){const el=$("toast");el.textContent=t;el.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>el.hidden=true,2600)}
 
+let editing=null;
+function startEdit(i){
+  editing=i;
+  state.cat=i.cat;state.payer=i.payer;state.method=i.method;sync();
+  $("amount").value=Number(i.amount).toLocaleString("ja-JP");
+  $("memo").value=i.memo||"";
+  $("date").value=i.date;
+  $("addTitle").textContent="記録を直す";
+  $("saveBtn").textContent="変更を保存";
+  $("cancelEdit").hidden=false;
+  $("formCard").classList.add("editing");
+  $("msg").textContent="";
+  render();
+  $("formCard").scrollIntoView({behavior:"smooth",block:"start"});
+  setTimeout(()=>$("amount").focus({preventScroll:true}),400);
+}
+function endEdit(){
+  editing=null;
+  $("addTitle").textContent="お買いものを記録";
+  $("saveBtn").textContent="記録する";
+  $("cancelEdit").hidden=true;
+  $("formCard").classList.remove("editing");
+  $("amount").value="";$("memo").value="";$("date").value=todayStr;$("msg").textContent="";
+  render();
+}
+$("cancelEdit").addEventListener("click",endEdit);
 $("form").addEventListener("submit",async e=>{
   e.preventDefault();
   const amount=Number($("amount").value.replace(/,/g,""));
@@ -410,9 +447,15 @@ $("form").addEventListener("submit",async e=>{
   const rec={amount,cat:state.cat,payer:state.payer,method:state.method,memo:$("memo").value.trim(),date,month:date.slice(0,7)};
   $("saveBtn").disabled=true;$("msg").textContent="";
   try{
-    await store.add(rec);
-    toast(`${CATS.find(x=>x.id===rec.cat).name} ${yen(amount)} を記録しました`);
-    $("amount").value="";$("memo").value="";
+    if(editing){
+      await store.update(editing.id,rec);
+      toast(`${CATS.find(x=>x.id===rec.cat).name} ${yen(amount)} に直しました`);
+      endEdit();
+    }else{
+      await store.add(rec);
+      toast(`${CATS.find(x=>x.id===rec.cat).name} ${yen(amount)} を記録しました`);
+      $("amount").value="";$("memo").value="";
+    }
     month=rec.month;await reload();
   }catch(err){$("msg").textContent="記録できませんでした（"+(err.message||"通信エラー")+"）。"}
   finally{$("saveBtn").disabled=false}
@@ -436,6 +479,7 @@ function localStore(){
   return{kind:"local",
     list:async m=>all.filter(i=>i.month===m),
     add:async r=>{all.push(Object.assign({id:"l"+Date.now().toString(36),created_at:new Date().toISOString()},r));save()},
+    update:async(id,r)=>{all=all.map(i=>i.id===id?Object.assign({},i,r):i);save()},
     remove:async id=>{all=all.filter(i=>i.id!==id);save()}};
 }
 function supabaseStore(){
@@ -448,6 +492,7 @@ function supabaseStore(){
     check:async pw=>{const {data,error}=await sb.rpc("futari_check",{pw});if(error)throw error;return data===true},
     list:async m=>chk(await sb.rpc("kb_list",{pw:PW,m}))||[],
     add:async r=>chk(await sb.rpc("kb_add",{pw:PW,row_data:r})),
+    update:async(id,r)=>chk(await sb.rpc("kb_update",{pw:PW,expense_id:id,row_data:r})),
     remove:async id=>chk(await sb.rpc("kb_delete",{pw:PW,expense_id:id}))};
 }
 function showLogin(msg){$("login").hidden=false;$("pwMsg").textContent=msg||"";$("pwInput").value="";setTimeout(()=>$("pwInput").focus(),50)}
