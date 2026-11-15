@@ -187,6 +187,29 @@ h2{font-size:1rem}
 .kbar{height:8px;border-radius:999px;background:var(--soft);overflow:hidden}
 .kbar span{display:block;height:100%;border-radius:999px;transition:width .4s}
 .kcats .yen{font-family:var(--font-display);font-weight:600;font-size:1rem;font-variant-numeric:tabular-nums;text-align:right}
+.kcats li{cursor:pointer;border-radius:12px;padding:5px 8px;margin-inline:-8px;transition:background .2s,opacity .2s}
+.kcats li:hover{background:var(--soft)}
+.kcats li:focus-visible{outline:2px solid var(--rose);outline-offset:1px}
+.kcats.filtering li{opacity:.45}
+.kcats.filtering li.on{opacity:1;background:var(--soft)}
+.kcats li.on .nm span{font-weight:700}
+.kcats .nm .arrow{margin-left:auto;color:var(--muted);font-size:.7rem}
+.cathint{margin:0;font-size:.72rem;color:var(--muted);text-align:center}
+.listhead{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.filterchip{display:inline-flex;align-items:center;gap:6px;border:0;border-radius:999px;padding:5px 12px;font-size:.78rem;cursor:pointer;background:var(--soft);color:var(--ink)}
+.filterchip i{width:9px;height:9px;border-radius:50%}
+.filterchip b{font-weight:400;color:var(--muted)}
+.subtotal{width:100%;display:flex;justify-content:space-between;align-items:baseline;font-size:.8rem;color:var(--muted);background:var(--soft);border-radius:14px;padding:8px 12px}
+.autorow{background:var(--soft);border-radius:18px;padding:12px 14px}
+.autorow select{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--hair);border-radius:14px;padding:10px 12px;width:100%;max-width:12em}
+.autorow select:focus{border-color:var(--rose);outline:none}
+.autohint{margin:0;font-size:.76rem;color:var(--muted)}
+.autotag{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;font-size:.62rem;font-weight:700;vertical-align:2px;background:linear-gradient(135deg,#fbe3ea,#ece4fa);color:#4d4558}
+.rulestotal{font-size:.78rem;color:var(--muted)}
+.rulestotal b{font-family:var(--font-display);font-weight:600;font-size:1.1rem;color:var(--ink)}
+.rulestatus{display:block;font-size:.7rem;color:var(--muted);margin-top:1px}
+.rulestatus.done{color:#7aa98f}
+.subtotal b{font-family:var(--font-display);font-weight:600;font-size:1.15rem;color:var(--ink);font-variant-numeric:tabular-nums}
 .kitem{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--hair)}
 .kitem:first-child{border-top:0}
 .badge{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;font-weight:700;font-size:.82rem;color:#4d4558}
@@ -237,9 +260,13 @@ h2{font-size:1rem}
       <div class="field"><span class="label">項目</span><div class="cats" id="catChips"></div></div>
       <div class="field"><span class="label">だれが払った？</span><div class="whos" id="payerChips"></div></div>
       <div class="field"><span class="label">支払い方法</span><div class="cats" id="methodChips"></div></div>
+      <div class="field autorow" id="autoRow" hidden>
+        <label class="field"><span class="label">毎月の支払い日</span><select id="payDay"></select></label>
+        <p class="autohint" id="autoHint"></p>
+      </div>
       <div class="two">
         <label class="field"><span class="label">何に払った？（メモ）</span><input type="text" id="memo" placeholder="例：スーパーで夕飯の材料" maxlength="60"></label>
-        <label class="field"><span class="label">日付</span><input type="date" id="date"></label>
+        <label class="field" id="dateField"><span class="label" id="dateLabel">日付</span><input type="date" id="date"></label>
       </div>
       <p class="msg" id="msg" role="status"></p>
       <button class="save" id="saveBtn" type="submit">記録する</button>
@@ -255,10 +282,23 @@ h2{font-size:1rem}
     <div class="total"><span class="label">この月の支出の合計</span><span class="num" id="total">¥0</span></div>
     <div class="paygrid" id="who"></div>
     <ul class="kcats" id="cats"></ul>
+    <p class="cathint" id="cathint">項目を押すと、その項目の明細だけを下に表示します</p>
   </section>
 
-  <section class="card" aria-labelledby="listTitle">
-    <h2 id="listTitle">明細</h2>
+  <section class="card" id="rulesCard" aria-labelledby="rulesTitle">
+    <div class="listhead">
+      <h2 id="rulesTitle">毎月の自動払い</h2>
+      <span class="rulestotal" id="rulesTotal"></span>
+    </div>
+    <ul class="list" id="rulesList"></ul>
+  </section>
+
+  <section class="card" id="listCard" aria-labelledby="listTitle">
+    <div class="listhead">
+      <h2 id="listTitle">明細</h2>
+      <button type="button" class="filterchip" id="clearFilter" hidden></button>
+    </div>
+    <div class="subtotal" id="subtotal" hidden></div>
     <ul class="list" id="list"></ul>
   </section>
 
@@ -306,7 +346,11 @@ const PAYERS=[
   {id:"husband",name:"哲也",short:"哲",c:"--p1",s:"--p1s"},
   {id:"wife",name:"菜々子",short:"菜",c:"--p2",s:"--p2s"}
 ];
-const METHODS=[{id:"card",name:"クレジットカード"},{id:"paypay",name:"PayPay"},{id:"cash",name:"現金"}];
+const METHODS=[{id:"card",name:"クレジットカード"},{id:"paypay",name:"PayPay"},{id:"cash",name:"現金"},
+  {id:"auto_debit",name:"自動引き落とし",auto:true},{id:"auto_transfer",name:"自動振込",auto:true}];
+const AUTO=id=>id==="auto_debit"||id==="auto_transfer";
+const JOINT_OK=["card","auto_debit","auto_transfer"];
+const dayLabel=d=>Number(d)>=31?"月末":`${Number(d)}日`;
 const $=id=>document.getElementById(id);
 const yen=n=>"¥"+Math.round(n).toLocaleString("ja-JP");
 const pad=n=>String(n).padStart(2,"0");
@@ -320,6 +364,9 @@ function lsSet(k,v){try{localStorage.setItem(k,v)}catch(e){}}
 
 let state={cat:"food",payer:"joint",method:"card"};
 let month=curMonth, items=[], store=null;
+let rules=[], rulesError=null, editingRule=null, editing=null;
+function clampDate(m,day){const [y,mm]=m.split("-").map(Number);const dim=new Date(y,mm,0).getDate();return `${m}-${pad(Math.min(Number(day),dim))}`}
+function mdText(d){return `${Number(d.slice(5,7))}/${Number(d.slice(8,10))}`}
 
 function chipRow(el,list,key,cls){
   el.innerHTML="";
@@ -335,7 +382,11 @@ function chipRow(el,list,key,cls){
     b.addEventListener("click",()=>{
       if(b.disabled)return;
       state[key]=o.id;
-      if(key==="payer"){state.method=o.id==="joint"?"card":(state.method==="card"?"paypay":state.method)}
+      if(key==="payer"){
+        if(o.id==="joint"&&!JOINT_OK.includes(state.method))state.method="card";
+        else if(o.id!=="joint"&&state.method==="card")state.method="paypay";
+      }
+      if(key==="method"&&o.auto&&!editingRule){const d=$("date").value||todayStr;$("payDay").value=String(Number(d.slice(8,10)))}
       sync();
     });
     el.appendChild(b);
@@ -344,13 +395,35 @@ function chipRow(el,list,key,cls){
 function sync(){
   [["catChips","cat"],["payerChips","payer"],["methodChips","method"]].forEach(([el,k])=>
     $(el).querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.id===state[k])));
-  $("methodChips").querySelectorAll("button").forEach(b=>b.disabled=state.payer==="joint"&&b.dataset.id!=="card");
+  $("methodChips").querySelectorAll("button").forEach(b=>{
+    const id=b.dataset.id;
+    b.disabled=(state.payer==="joint"&&!JOINT_OK.includes(id))||(!!editing&&AUTO(id))||(!!editingRule&&!AUTO(id));
+  });
+  const isAuto=AUTO(state.method);
+  $("autoRow").hidden=!isAuto;
+  $("dateField").hidden=!!editingRule;
+  $("dateLabel").textContent=isAuto?"いつから":"日付";
+  $("memo").placeholder=isAuto?"例：家賃、電気代、積立":"例：スーパーで夕飯の材料";
+  $("saveBtn").textContent=(editing||editingRule)?"変更を保存":(isAuto?"毎月の自動払いを登録":"記録する");
+  if(isAuto){
+    const day=Number($("payDay").value||1);
+    if(editingRule){$("autoHint").textContent=`毎月${dayLabel(day)}に自動で記録されます。変更は、まだ記録していない月から反映されます。`}
+    else{
+      const sm=($("date").value||todayStr).slice(0,7), first=clampDate(sm,day);
+      $("autoHint").textContent=`毎月${dayLabel(day)}に、自動で家計簿に記録されます。`+
+        (first<=todayStr?`${Number(sm.slice(5))}月分（${mdText(first)}）は登録するとすぐに記録されます。`:`初回は ${mdText(first)} に記録されます。`);
+    }
+  }
 }
 chipRow($("catChips"),CATS,"cat","cat");
 chipRow($("payerChips"),PAYERS,"payer","whobtn");
 chipRow($("methodChips"),METHODS,"method","cat");
-sync();
+(function(){const sel=$("payDay");for(let d=1;d<=31;d++){const o=document.createElement("option");o.value=String(d);o.textContent=d===31?"月末":`${d}日`;sel.appendChild(o)}})();
 $("date").value=todayStr;
+$("payDay").value=String(now.getDate());
+$("payDay").addEventListener("change",sync);
+$("date").addEventListener("change",sync);
+sync();
 $("amount").addEventListener("input",e=>{
   const v=e.target.value.replace(/[０-９]/g,d=>String.fromCharCode(d.charCodeAt(0)-65248)).replace(/[^\d]/g,"");
   e.target.value=v?Number(v).toLocaleString("ja-JP"):"";
@@ -358,7 +431,45 @@ $("amount").addEventListener("input",e=>{
 function monthLabel(m){const [y,mm]=m.split("-");return {y,m:Number(mm)}}
 function shiftMonth(m,d){let [y,mm]=m.split("-").map(Number);mm+=d;if(mm<1){mm=12;y--}if(mm>12){mm=1;y++}return `${y}-${pad(mm)}`}
 
+function renderRules(){
+  const ul=$("rulesList");ul.innerHTML="";
+  if(rulesError==="setup"){
+    $("rulesTotal").textContent="";
+    ul.innerHTML=`<li class="empty">自動払いを使うには、Supabaseで auto_setup.sql を一度実行してください。</li>`;return;
+  }
+  const sum=rules.reduce((a,r)=>a+Number(r.amount),0);
+  $("rulesTotal").innerHTML=rules.length?`毎月 <b>${yen(sum)}</b>`:"";
+  if(!rules.length){
+    ul.innerHTML=`<li class="empty">まだありません。<br>上の「支払い方法」で「自動引き落とし」か「自動振込」を選ぶと登録できます。</li>`;return;
+  }
+  rules.forEach(r=>{
+    const c=CATS.find(x=>x.id===r.cat)||CATS[6];
+    const p=PAYERS.find(x=>x.id===r.payer)||PAYERS[0];
+    const m=METHODS.find(x=>x.id===r.method)?.name||"";
+    const li=document.createElement("li");li.className="kitem";
+    if(editingRule&&editingRule.id===r.id)li.classList.add("editing");
+    li.innerHTML=`<span class="badge"></span><span class="info"><span class="t"></span><span class="s"></span><span class="rulestatus"></span></span><span class="yen"></span><span class="kacts"><button class="kedit" type="button">編集</button><button class="kdel" type="button">停止</button></span>`;
+    li.querySelector(".badge").style.background=c.c;li.querySelector(".badge").textContent=c.name.slice(0,1);
+    li.querySelector(".t").textContent=r.title||c.name;
+    li.querySelector(".s").textContent=`毎月${dayLabel(r.day)}・${c.name}・${p.name}（${m}）`;
+    const st=li.querySelector(".rulestatus");
+    if(r.start_month>curMonth)st.textContent=`${Number(r.start_month.slice(0,4))}年${Number(r.start_month.slice(5))}月から開始`;
+    else if(r.last_month>=curMonth){st.textContent="今月分は記録済み";st.classList.add("done")}
+    else st.textContent=`今月は ${mdText(clampDate(curMonth,r.day))} に記録予定`;
+    li.querySelector(".yen").textContent=yen(r.amount);
+    li.querySelector(".kedit").addEventListener("click",()=>startRuleEdit(r));
+    const stop=li.querySelector(".kdel");
+    stop.addEventListener("click",async()=>{
+      if(!stop.classList.contains("confirm")){stop.classList.add("confirm");stop.textContent="本当に止める";setTimeout(()=>{stop.classList.remove("confirm");stop.textContent="停止"},3000);return}
+      stop.disabled=true;
+      try{await store.ruleStop(r.id);if(editingRule&&editingRule.id===r.id)endEdit();toast(`「${r.title||c.name}」の自動払いを止めました（これまでの記録は残ります）`);await reload()}
+      catch(e){toast("止められませんでした（"+friendly(e)+"）");stop.disabled=false}
+    });
+    ul.appendChild(li);
+  });
+}
 function render(){
+  renderRules();
   const ml=monthLabel(month);
   $("mtitle").innerHTML="";const sm=document.createElement("small");sm.textContent=ml.y+"年";
   $("mtitle").append(sm,document.createTextNode(ml.m+"月"));
@@ -378,15 +489,37 @@ function render(){
   CATS.forEach((c,ix)=>{
     const s=sums[ix];
     const li=document.createElement("li");
+    li.tabIndex=0;li.setAttribute("role","button");
+    li.setAttribute("aria-pressed",catFilter===c.id);
+    li.setAttribute("aria-label",`${c.name}の明細だけを表示`);
+    if(catFilter===c.id)li.classList.add("on");
     li.innerHTML=`<span class="nm"><i></i><span></span></span><span class="kbar"><span></span></span><span class="yen"></span>`;
+    const pick=()=>setFilter(catFilter===c.id?null:c.id,true);
+    li.addEventListener("click",pick);
+    li.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();pick()}});
     li.querySelector(".nm i").style.background=c.c;li.querySelector(".kbar span").style.background=c.c;
     li.querySelector(".kbar span").style.width=(s/max*100)+"%";
     li.querySelector(".nm span").textContent=c.name;li.querySelector(".yen").textContent=yen(s);
     $("cats").appendChild(li);
   });
+  $("cats").classList.toggle("filtering",!!catFilter);
+  const fc=catFilter?CATS.find(x=>x.id===catFilter):null;
+  const shown=fc?mine.filter(i=>i.cat===fc.id):mine;
+  $("listTitle").textContent=fc?`${fc.name}の明細`:"明細";
+  $("clearFilter").hidden=!fc;$("subtotal").hidden=!fc;
+  if(fc){
+    $("clearFilter").innerHTML=`<i></i>すべて表示 <b>✕</b>`;$("clearFilter").querySelector("i").style.background=fc.c;
+    $("subtotal").innerHTML=`<span></span><b></b>`;
+    $("subtotal").querySelector("span").textContent=`${ml.m}月の${fc.name}　${shown.length}件`;
+    $("subtotal").querySelector("b").textContent=yen(shown.reduce((a,i)=>a+i.amount,0));
+  }
   const ul=$("list");ul.innerHTML="";
-  if(!mine.length){ul.innerHTML=`<li class="empty">${ml.m}月の記録はまだありません。<br>上のフォームから最初のお買いものを登録しましょう。</li>`;return}
-  mine.forEach(i=>{
+  if(!shown.length){
+    ul.innerHTML=fc?`<li class="empty">${ml.m}月の${fc.name}の記録はまだありません。</li>`
+      :`<li class="empty">${ml.m}月の記録はまだありません。<br>上のフォームから最初のお買いものを登録しましょう。</li>`;
+    return;
+  }
+  shown.forEach(i=>{
     const c=CATS.find(x=>x.id===i.cat)||CATS[6];
     const p=PAYERS.find(x=>x.id===i.payer)||PAYERS[0];
     const m=METHODS.find(x=>x.id===i.method)?.name||"";
@@ -394,6 +527,7 @@ function render(){
     li.innerHTML=`<span class="badge"></span><span class="info"><span class="t"></span><span class="s"></span></span><span class="yen"></span><span class="kacts"><button class="kedit" type="button">編集</button><button class="kdel" type="button">削除</button></span>`;
     li.querySelector(".badge").style.background=c.c;li.querySelector(".badge").textContent=c.name.slice(0,1);
     li.querySelector(".t").textContent=i.memo||c.name;
+    if(i.rule_id||AUTO(i.method)){const tg=document.createElement("span");tg.className="autotag";tg.textContent="毎月";li.querySelector(".t").appendChild(tg)}
     li.querySelector(".s").textContent=`${Number(i.date.slice(5,7))}/${Number(i.date.slice(8,10))}・${c.name}・${p.name}（${m}）`;
     li.querySelector(".yen").textContent=yen(i.amount);
     if(editing&&editing.id===i.id)li.classList.add("editing");
@@ -407,36 +541,57 @@ function render(){
     ul.appendChild(li);
   });
 }
-$("prev").onclick=()=>{month=shiftMonth(month,-1);reload()};
-$("next").onclick=()=>{month=shiftMonth(month,1);reload()};
+$("prev").onclick=()=>{month=shiftMonth(month,-1);items=[];reload()};
+$("next").onclick=()=>{month=shiftMonth(month,1);items=[];reload()};
 
+let catFilter=null;
+function setFilter(id,scroll){
+  catFilter=id;render();
+  if(scroll&&id)$("listCard").scrollIntoView({behavior:"smooth",block:"start"});
+}
+$("clearFilter").addEventListener("click",()=>setFilter(null,false));
 let toastT=null;
 function toast(t){const el=$("toast");el.textContent=t;el.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>el.hidden=true,2600)}
 
-let editing=null;
-function startEdit(i){
-  editing=i;
-  state.cat=i.cat;state.payer=i.payer;state.method=i.method;sync();
-  $("amount").value=Number(i.amount).toLocaleString("ja-JP");
-  $("memo").value=i.memo||"";
-  $("date").value=i.date;
-  $("addTitle").textContent="記録を直す";
-  $("saveBtn").textContent="変更を保存";
+function friendly(err){
+  if(err&&err.needsSetup)return "Supabaseに自動払いの設定がまだありません。auto_setup.sql を実行してください";
+  const m=String(err&&err.message||"");
+  if(/Failed to fetch|NetworkError|network/i.test(m))return "電波が弱いようです";
+  if(m.includes("wrong_password"))return "パスワードを入れ直してください";
+  return m||"通信エラー";
+}
+function openForm(title){
+  $("addTitle").textContent=title;
   $("cancelEdit").hidden=false;
   $("formCard").classList.add("editing");
   $("msg").textContent="";
-  render();
+  sync();render();
   $("formCard").scrollIntoView({behavior:"smooth",block:"start"});
   setTimeout(()=>$("amount").focus({preventScroll:true}),400);
 }
+function startEdit(i){
+  editing=i;editingRule=null;
+  state.cat=i.cat;state.payer=i.payer;state.method=i.method;
+  $("amount").value=Number(i.amount).toLocaleString("ja-JP");
+  $("memo").value=i.memo||"";
+  $("date").value=i.date;
+  openForm("記録を直す");
+}
+function startRuleEdit(r){
+  editingRule=r;editing=null;
+  state.cat=r.cat;state.payer=r.payer;state.method=r.method;
+  $("amount").value=Number(r.amount).toLocaleString("ja-JP");
+  $("memo").value=r.title||"";
+  $("payDay").value=String(r.day);
+  openForm("毎月の自動払いを直す");
+}
 function endEdit(){
-  editing=null;
+  editing=null;editingRule=null;
   $("addTitle").textContent="お買いものを記録";
-  $("saveBtn").textContent="記録する";
   $("cancelEdit").hidden=true;
   $("formCard").classList.remove("editing");
   $("amount").value="";$("memo").value="";$("date").value=todayStr;$("msg").textContent="";
-  render();
+  sync();render();
 }
 $("cancelEdit").addEventListener("click",endEdit);
 $("form").addEventListener("submit",async e=>{
@@ -444,20 +599,36 @@ $("form").addEventListener("submit",async e=>{
   const amount=Number($("amount").value.replace(/,/g,""));
   if(!amount||amount<=0){$("msg").textContent="金額を入力してください。";$("amount").focus();return}
   const date=$("date").value||todayStr;
-  const rec={amount,cat:state.cat,payer:state.payer,method:state.method,memo:$("memo").value.trim(),date,month:date.slice(0,7)};
+  const catName=CATS.find(x=>x.id===state.cat).name;
+  const memo=$("memo").value.trim();
+  const isAuto=AUTO(state.method);
   $("saveBtn").disabled=true;$("msg").textContent="";
+  const wasEditing=!!(editing||editingRule);
   try{
-    if(editing){
-      await store.update(editing.id,rec);
-      toast(`${CATS.find(x=>x.id===rec.cat).name} ${yen(amount)} に直しました`);
+    if(editingRule){
+      const day=Number($("payDay").value);
+      await store.ruleUpdate(editingRule.id,{title:memo||catName,amount,cat:state.cat,payer:state.payer,method:state.method,day});
+      toast(`毎月${dayLabel(day)}の「${memo||catName}」を直しました`);
       endEdit();
+    }else if(editing){
+      const rec={amount,cat:state.cat,payer:state.payer,method:state.method,memo,date,month:date.slice(0,7)};
+      await store.update(editing.id,rec);
+      items=items.map(x=>x.id===editing.id?Object.assign({},x,rec):x);
+      toast(`${catName} ${yen(amount)} に直しました`);
+      endEdit();month=rec.month;
+    }else if(isAuto){
+      const day=Number($("payDay").value);
+      await store.ruleAdd({title:memo||catName,amount,cat:state.cat,payer:state.payer,method:state.method,day,start_month:date.slice(0,7)});
+      toast(`毎月${dayLabel(day)}に ${yen(amount)} の自動払いを登録しました`);
+      $("amount").value="";$("memo").value="";sync();
     }else{
+      const rec={amount,cat:state.cat,payer:state.payer,method:state.method,memo,date,month:date.slice(0,7)};
       await store.add(rec);
-      toast(`${CATS.find(x=>x.id===rec.cat).name} ${yen(amount)} を記録しました`);
-      $("amount").value="";$("memo").value="";
+      toast(`${catName} ${yen(amount)} を記録しました`);
+      $("amount").value="";$("memo").value="";month=rec.month;
     }
-    month=rec.month;await reload();
-  }catch(err){$("msg").textContent="記録できませんでした（"+(err.message||"通信エラー")+"）。"}
+    await reload();
+  }catch(err){$("msg").textContent=(wasEditing?"変更を保存できませんでした":(isAuto?"自動払いを登録できませんでした":"記録できませんでした"))+"（"+friendly(err)+"）。"}
   finally{$("saveBtn").disabled=false}
 });
 
@@ -475,9 +646,26 @@ function localStore(){
       {id:"e4",amount:860,cat:"daily",payer:"wife",method:"cash",memo:"洗剤（例）",date:d(6),month:curMonth,created_at:"4"}
     ];
   }
-  const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(all))}catch(e){}};save();
+  let rl;try{rl=JSON.parse(localStorage.getItem(KEY+"-rules")||"null")}catch(e){rl=null}
+  if(!rl)rl=[{id:"r1",title:"家賃（例）",amount:85000,cat:"other",payer:"joint",method:"auto_debit",day:25,start_month:curMonth,last_month:shiftMonth(curMonth,-1),active:true,created_at:"1"}];
+  const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(all));localStorage.setItem(KEY+"-rules",JSON.stringify(rl))}catch(e){}};
+  const localSync=()=>{
+    rl.filter(r=>r.active).forEach(r=>{
+      let m=shiftMonth(r.last_month,1);
+      while(m<=curMonth){
+        const d=clampDate(m,r.day);if(d>todayStr)break;
+        if(!all.some(x=>x.rule_id===r.id&&x.month===m))all.push({id:"g"+r.id+m,amount:r.amount,cat:r.cat,payer:r.payer,method:r.method,memo:r.title,date:d,month:m,rule_id:r.id,created_at:new Date().toISOString()});
+        r.last_month=m;m=shiftMonth(m,1);
+      }
+    });save();
+  };
+  save();
   return{kind:"local",
-    list:async m=>all.filter(i=>i.month===m),
+    list:async m=>{localSync();return all.filter(i=>i.month===m)},
+    rulesList:async()=>rl.filter(r=>r.active).sort((a,b)=>a.day-b.day),
+    ruleAdd:async r=>{rl.push(Object.assign({id:"r"+Date.now().toString(36),active:true,created_at:new Date().toISOString(),last_month:shiftMonth(r.start_month,-1)},r));save()},
+    ruleUpdate:async(id,r)=>{rl=rl.map(x=>x.id===id?Object.assign({},x,r):x);save()},
+    ruleStop:async id=>{rl=rl.map(x=>x.id===id?Object.assign({},x,{active:false}):x);save()},
     add:async r=>{all.push(Object.assign({id:"l"+Date.now().toString(36),created_at:new Date().toISOString()},r));save()},
     update:async(id,r)=>{all=all.map(i=>i.id===id?Object.assign({},i,r):i);save()},
     remove:async id=>{all=all.filter(i=>i.id!==id);save()}};
@@ -488,11 +676,30 @@ function supabaseStore(){
     if(error){if(String(error.message).includes("wrong_password"))showLogin("パスワードが変わったようです。もう一度入れてください。");throw error}
     return data;
   };
+  const missing=e=>e&&(e.code==="PGRST202"||/Could not find the function|schema cache/i.test(String(e.message)));
+  const rule=async(fn,args)=>{
+    const res=await sb.rpc(fn,Object.assign({pw:PW},args));
+    if(missing(res.error)){const e=new Error("needs_setup");e.needsSetup=true;throw e}
+    return chk(res);
+  };
   return{kind:"cloud",
+    rulesList:async()=>(await rule("kb_rules_list",{}))||[],
+    ruleAdd:async r=>rule("kb_rule_add",{row_data:r}),
+    ruleUpdate:async(id,r)=>rule("kb_rule_update",{rule_id:id,row_data:r}),
+    ruleStop:async id=>rule("kb_rule_stop",{rule_id:id}),
     check:async pw=>{const {data,error}=await sb.rpc("futari_check",{pw});if(error)throw error;return data===true},
     list:async m=>chk(await sb.rpc("kb_list",{pw:PW,m}))||[],
     add:async r=>chk(await sb.rpc("kb_add",{pw:PW,row_data:r})),
-    update:async(id,r)=>chk(await sb.rpc("kb_update",{pw:PW,expense_id:id,row_data:r})),
+    update:async(id,r)=>{
+      const res=await sb.rpc("kb_update",{pw:PW,expense_id:id,row_data:r});
+      if(res.error&&(res.error.code==="PGRST202"||/Could not find the function|schema cache|does not exist/i.test(res.error.message))){
+        /* Supabase側に「編集」の設定がまだ無いときは、新しい内容で記録してから古い記録を消す */
+        chk(await sb.rpc("kb_add",{pw:PW,row_data:r}));
+        chk(await sb.rpc("kb_delete",{pw:PW,expense_id:id}));
+        return;
+      }
+      chk(res);
+    },
     remove:async id=>chk(await sb.rpc("kb_delete",{pw:PW,expense_id:id}))};
 }
 function showLogin(msg){$("login").hidden=false;$("pwMsg").textContent=msg||"";$("pwInput").value="";setTimeout(()=>$("pwInput").focus(),50)}
@@ -509,17 +716,20 @@ $("loginForm").addEventListener("submit",async e=>{
 });
 $("logout").addEventListener("click",()=>{PW="";try{localStorage.removeItem("futari-pw")}catch(e){}items=[];render();showLogin("ログアウトしました。")});
 
-let loading=false;
+let loading=false,again=false;
 async function reload(){
   render();
-  if(!store||loading)return;
+  if(!store)return;
+  if(loading){again=true;return}
   if(store.kind==="cloud"&&!PW){showLogin();return}
   loading=true;
   try{
     items=(await store.list(month)).map(r=>Object.assign({},r,{amount:Number(r.amount),date:String(r.date).slice(0,10)}));
+    try{rules=(await store.rulesList()).map(r=>Object.assign({},r,{amount:Number(r.amount),day:Number(r.day)}));rulesError=null}
+    catch(e){rules=[];rulesError=e.needsSetup?"setup":"load"}
     if(store.kind==="cloud")$("syncNote").textContent="ふたりのスマホで同じ記録が見られます。最新："+new Date().toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"});
   }catch(err){$("syncNote").textContent="記録を読み込めませんでした（"+(err.message||"通信エラー")+"）。"}
-  finally{loading=false;render()}
+  finally{loading=false;render();if(again){again=false;reload()}}
 }
 (function start(){
   const ready=SUPABASE_URL.startsWith("https://")&&SUPABASE_KEY.length>20&&!SUPABASE_KEY.includes("ここに")&&window.supabase;
